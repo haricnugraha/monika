@@ -304,6 +304,32 @@ export class BaseProber implements Prober {
     }
   }
 
+  protected setResponseAndAddAlerts(
+    requestLog: any,
+    probeResult: ProbeRequestResponse<any>
+  ): any {
+    requestLog.setResponse(probeResult)
+    requestLog.addAlerts(
+      this.evaluateResponse(probeResult)
+        .filter((item) => item.isAlertTriggered)
+        .map((item) => item.alert)
+    )
+
+    return requestLog
+  }
+
+  protected storeRequestAndNotification(requestLog: any): void {
+    if (
+      isSymonModeFrom(getContext().flags) ||
+      getContext().flags['keep-verbose-logs'] ||
+      requestLog.hasIncidentOrRecovery
+    ) {
+      requestLog
+        .saveToDatabase()
+        .catch((error: any) => log.error(error.message))
+    }
+  }
+
   private responseProcessing({
     index,
     probeResults,
@@ -322,12 +348,10 @@ export class BaseProber implements Prober {
     // send notification
     // store request and notification data to database
     const requestLog = new RequestLog(this.probeConfig, index, 0)
-    requestLog.addAlerts(
-      this.evaluateResponse(probeResults[index].requestResponse)
-        .filter((item) => item.isAlertTriggered)
-        .map((item) => item.alert)
+    this.setResponseAndAddAlerts(
+      requestLog,
+      probeResults[index].requestResponse
     )
-    requestLog.setResponse(probeResults[index].requestResponse)
     // Done processing results, check if need to send out alerts
     this.checkThresholdsAndSendAlert(
       {
@@ -346,13 +370,7 @@ export class BaseProber implements Prober {
       },
       requestLog
     )
-
-    if (
-      isSymonModeFrom(getContext().flags) ||
-      getContext().flags['keep-verbose-logs'] ||
-      requestLog.hasIncidentOrRecovery
-    ) {
-      requestLog.saveToDatabase().catch((error) => log.error(error.message))
-    }
+    requestLog.print()
+    this.storeRequestAndNotification(requestLog)
   }
 }

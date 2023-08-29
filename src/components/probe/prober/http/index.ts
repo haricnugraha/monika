@@ -22,13 +22,10 @@
  * SOFTWARE.                                                                      *
  **********************************************************************************/
 
-import { isSymonModeFrom } from '../../../config'
-import { getContext } from '../../../../context'
 import events from '../../../../events'
 import type { ProbeRequestResponse } from '../../../../interfaces/request'
 import { ProbeRequestResult } from '../../../../interfaces/request'
 import { getEventEmitter } from '../../../../utils/events'
-import { log } from '../../../../utils/pino'
 import { RequestLog } from '../../../logger'
 import { logResponseTime } from '../../../logger/response-time-log'
 import { httpRequest } from './request'
@@ -40,27 +37,26 @@ const isConnectionDown = new Map<string, boolean>()
 
 export class HTTPProber extends BaseProber {
   async probe(): Promise<void> {
-    const { counter, notifications, probeConfig: probe } = this
-    const eventEmitter = getEventEmitter()
-    const { flags } = getContext()
-    const isSymonMode = isSymonModeFrom(flags)
-    const isVerbose = isSymonMode || flags['keep-verbose-logs']
-    const responses = []
-
-    if (!probe.requests) {
+    if (!this.probeConfig.requests) {
       return
     }
 
     // sending multiple http-type requests
+    const responses = []
+
     for (
       let requestIndex = 0;
-      requestIndex < probe?.requests?.length;
+      requestIndex < this.probeConfig?.requests?.length;
       requestIndex++
     ) {
-      const request = probe.requests?.[requestIndex]
-      const requestLog = new RequestLog(probe, requestIndex, counter)
+      const request = this.probeConfig.requests?.[requestIndex]
+      const requestLog = new RequestLog(
+        this.probeConfig,
+        requestIndex,
+        this.counter
+      )
       // create id-request
-      const id = `${probe?.id}:${request.url}:${requestIndex}:${request?.id} `
+      const id = `${this.probeConfig?.id}:${request.url}:${requestIndex}:${request?.id} `
 
       try {
         // intentionally wait for a request to finish before processing next request in loop
@@ -74,20 +70,16 @@ export class HTTPProber extends BaseProber {
           probeRes,
           request.alerts
         )
-        // done probing, got some result, process it, check for thresholds and notifications
-        const statuses = this.processThresholds({
+        // Set request result value
+        probeRes.result = this.processThresholds({
           requestIndex,
           evaluatedResponse,
-        })
-
-        // Set request result value
-        const isDown = statuses.some((item) => item.state === 'DOWN')
-        probeRes.result = isDown
+        }).some((item) => item.state === 'DOWN')
           ? ProbeRequestResult.failed
           : ProbeRequestResult.success
 
-        eventEmitter.emit(events.probe.response.received, {
-          probe,
+        getEventEmitter().emit(events.probe.response.received, {
+          probe: this.probeConfig,
           requestIndex,
           response: probeRes,
         })
@@ -95,17 +87,17 @@ export class HTTPProber extends BaseProber {
         logResponseTime(probeRes.responseTime)
         // Add to a response array to be accessed by another request for chaining later
         responses.push(probeRes)
-        requestLog.setResponse(probeRes)
-        requestLog.addAlerts(
-          evaluatedResponse
-            .filter((item) => item.isAlertTriggered)
-            .map((item) => item.alert)
-        )
+        this.setResponseAndAddAlerts(requestLog, probeRes)
         // so we've got a status that need to be reported/alerted
         // 1. check first, this connection is up, but was it ever down? if yes then use a specific connection recovery msg
         // 2. if this connection is down, save to map and send specific connection incident msg
         // 3. if event is not for connection failure, send user specified notification msg
-        if (statuses[0].shouldSendNotification) {
+        if (
+          this.processThresholds({
+            requestIndex,
+            evaluatedResponse,
+          })[0].shouldSendNotification
+        ) {
           const { isProbeResponsive } = probeRes
 
           if (
@@ -132,9 +124,12 @@ export class HTTPProber extends BaseProber {
         // Done processing results, check if need to send out alerts
         this.checkThresholdsAndSendAlert(
           {
-            probe,
-            statuses,
-            notifications,
+            probe: this.probeConfig,
+            statuses: this.processThresholds({
+              requestIndex,
+              evaluatedResponse,
+            }),
+            notifications: this.notifications,
             requestIndex,
             evaluatedResponseStatuses: evaluatedResponse,
           },
@@ -148,8 +143,8 @@ export class HTTPProber extends BaseProber {
           )
 
           if (triggeredAlertResponse) {
-            eventEmitter.emit(events.probe.alert.triggered, {
-              probe,
+            getEventEmitter().emit(events.probe.alert.triggered, {
+              probe: this.probeConfig,
               requestIndex,
               alertQuery:
                 triggeredAlertResponse.alert.assertion ||
@@ -164,9 +159,8 @@ export class HTTPProber extends BaseProber {
         break
       } finally {
         requestLog.print()
-        if (isVerbose || requestLog.hasIncidentOrRecovery) {
-          requestLog.saveToDatabase().catch((error) => log.error(error.message))
-        }
+
+        this.storeRequestAndNotification(requestLog)
       }
     }
   }
