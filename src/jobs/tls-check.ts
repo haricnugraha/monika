@@ -27,8 +27,8 @@ import { saveNotificationLog } from '../components/logger/history'
 import { sendAlerts } from '../components/notification'
 import { checkTLS, getHostname } from '../components/tls-checker'
 import type { Notification } from '@hyperjumptech/monika-notification'
-import type { ValidatedResponse } from '../plugins/validate-response'
 import { log } from '../utils/pino'
+import type { EvaluatedResponse } from '../components/probe/prober'
 
 type SendTLSErrorNotificationProps = {
   hostname: string
@@ -92,7 +92,7 @@ function sendTLSErrorNotification({
   for (const notification of notifications) {
     // TODO: Remove validation below
     // validation is used because it is needed to send alert
-    const validation: ValidatedResponse = {
+    const validation: EvaluatedResponse = {
       alert: { assertion: '', message: errorMessage },
       isAlertTriggered: true,
       response: {

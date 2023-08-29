@@ -22,17 +22,17 @@
  * SOFTWARE.                                                                      *
  **********************************************************************************/
 
-import { expect } from 'chai'
+import { expect } from '@oclif/test'
 import { interpret } from 'xstate'
 
-import { Probe } from '../../../interfaces/probe'
-import { ServerAlertState } from '../../../interfaces/probe-status'
-import { ValidatedResponse } from '../../../plugins/validate-response'
+import type { Probe } from '../../../interfaces/probe'
+import type { ServerAlertState } from '../../../interfaces/probe-status'
 import {
   processThresholds,
   serverAlertStateInterpreters,
   serverAlertStateMachine,
 } from '../process-server-status'
+import type { EvaluatedResponse } from '../../probe/prober'
 
 describe('serverAlertStateMachine', () => {
   let interpreter: any
@@ -150,27 +150,27 @@ describe('processThresholds', () => {
       alert: { query: 'response.time > 1000' },
       isAlertTriggered: false,
     },
-  ] as ValidatedResponse[]
+  ] as EvaluatedResponse[]
   const failureResponse = [
     {
       alert: { query: 'response.time > 1000' },
       isAlertTriggered: true,
     },
-  ] as ValidatedResponse[]
+  ] as EvaluatedResponse[]
 
   it('should attach state calculation to each request', () => {
     // failure happened first for request with index 0
     processThresholds({
       probe,
       requestIndex: 0,
-      validatedResponse: failureResponse,
+      evaluatedResponse: failureResponse,
     })
 
     // processing request with index 1
     const result1 = processThresholds({
       probe,
       requestIndex: 1,
-      validatedResponse: failureResponse,
+      evaluatedResponse: failureResponse,
     })
 
     // failure happened only once for request with index 1, it does not reach threshold yet
@@ -179,7 +179,7 @@ describe('processThresholds', () => {
     const result2 = processThresholds({
       probe,
       requestIndex: 1,
-      validatedResponse: failureResponse,
+      evaluatedResponse: failureResponse,
     })
 
     // second time failure happened for request with index 1, it reaches threshold
@@ -194,7 +194,7 @@ describe('processThresholds', () => {
       result = processThresholds({
         probe,
         requestIndex: 1,
-        validatedResponse: failureResponse,
+        evaluatedResponse: failureResponse,
       })
     }
 
@@ -207,7 +207,7 @@ describe('processThresholds', () => {
     result = processThresholds({
       probe,
       requestIndex: 1,
-      validatedResponse: successResponse,
+      evaluatedResponse: successResponse,
     })
 
     // send failure response again as much threshold
@@ -215,7 +215,7 @@ describe('processThresholds', () => {
       result = processThresholds({
         probe,
         requestIndex: 1,
-        validatedResponse: failureResponse,
+        evaluatedResponse: failureResponse,
       })
     }
 
@@ -229,7 +229,7 @@ describe('processThresholds', () => {
       result = processThresholds({
         probe,
         requestIndex: 1,
-        validatedResponse: successResponse,
+        evaluatedResponse: successResponse,
       })
     }
 
@@ -242,7 +242,7 @@ describe('processThresholds', () => {
     result = processThresholds({
       probe,
       requestIndex: 1,
-      validatedResponse: failureResponse,
+      evaluatedResponse: failureResponse,
     })
 
     // send success response as much threshold
@@ -250,7 +250,7 @@ describe('processThresholds', () => {
       result = processThresholds({
         probe,
         requestIndex: 1,
-        validatedResponse: successResponse,
+        evaluatedResponse: successResponse,
       })
     }
 
@@ -274,7 +274,7 @@ describe('processThresholds', () => {
     const result = processThresholds({
       probe,
       requestIndex: 1,
-      validatedResponse: failureResponse,
+      evaluatedResponse: failureResponse,
     })
 
     // assert

@@ -26,9 +26,8 @@ import { differenceInSeconds } from 'date-fns'
 import { getContext } from '../../context'
 import events from '../../events'
 import type { Notification } from '@hyperjumptech/monika-notification'
-import { Probe } from '../../interfaces/probe'
-import { ServerAlertState } from '../../interfaces/probe-status'
-import type { ValidatedResponse } from '../../plugins/validate-response'
+import type { Probe } from '../../interfaces/probe'
+import type { ServerAlertState } from '../../interfaces/probe-status'
 import { getEventEmitter } from '../../utils/events'
 import { log } from '../../utils/pino'
 import {
@@ -40,12 +39,13 @@ import {
 import { RequestLog } from '../logger'
 import { sendAlerts } from '../notification'
 import { createProbers } from './prober/factory'
+import type { EvaluatedResponse } from './prober'
 
 interface ProbeStatusProcessed {
   probe: Probe
   statuses?: ServerAlertState[]
   notifications: Notification[]
-  validatedResponseStatuses: ValidatedResponse[]
+  evaluatedResponseStatuses: EvaluatedResponse[]
   requestIndex: number
 }
 
@@ -63,16 +63,16 @@ const probeSendNotification = async (data: ProbeSendNotification) => {
     probeState,
     notifications,
     requestIndex,
-    validatedResponseStatuses,
+    evaluatedResponseStatuses,
   } = data
 
   const statusString = probeState?.state ?? 'UP'
   const url = probe.requests?.[requestIndex]?.url ?? ''
   const validation =
-    validatedResponseStatuses.find(
-      (validateResponse: ValidatedResponse) =>
-        validateResponse.alert.assertion === probeState?.alertQuery
-    ) || validatedResponseStatuses[index]
+    evaluatedResponseStatuses.find(
+      (evaluateResponse: EvaluatedResponse) =>
+        evaluateResponse.alert.assertion === probeState?.alertQuery
+    ) || evaluatedResponseStatuses[index]
 
   eventEmitter.emit(events.probe.notification.willSend, {
     probeID: probe.id,
@@ -103,7 +103,7 @@ export function checkThresholdsAndSendAlert(
     statuses,
     notifications,
     requestIndex,
-    validatedResponseStatuses,
+    evaluatedResponseStatuses,
   } = data
 
   const probeStatesWithValidAlert = getProbeStatesWithValidAlert(statuses || [])
@@ -112,7 +112,7 @@ export function checkThresholdsAndSendAlert(
     const { alertQuery, state } = probeState
 
     // send only notifications that we have messages for (if it was truncated)
-    if (index === validatedResponseStatuses.length) {
+    if (index === evaluatedResponseStatuses.length) {
       break
     }
 
@@ -122,7 +122,7 @@ export function checkThresholdsAndSendAlert(
       probeState,
       notifications,
       requestIndex,
-      validatedResponseStatuses,
+      evaluatedResponseStatuses,
     }).catch((error: Error) => log.error(error.message))
 
     requestLog.addNotifications(

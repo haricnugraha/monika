@@ -34,7 +34,6 @@ import { isSymonModeFrom } from '../../config'
 import { RequestLog } from '../../logger'
 import { processThresholds } from '../../notification/process-server-status'
 import responseChecker from '../../../plugins/validate-response/checkers'
-import type { ValidatedResponse } from '../../../plugins/validate-response'
 
 export type ProbeResult = {
   isAlertTriggered: boolean
@@ -47,13 +46,19 @@ type RespProsessingParams = {
   probeResults: ProbeResult[]
 }
 
+export type EvaluatedResponse = {
+  response: ProbeRequestResponse
+  alert: ProbeAlert
+  isAlertTriggered: boolean
+}
+
 export interface Prober {
   probe: () => Promise<void>
   generateVerboseStartupMessage: () => string
-  validateResponse: (
+  evaluateResponse: (
     response: ProbeRequestResponse,
     additionalAssertions?: ProbeAlert[]
-  ) => ValidatedResponse[]
+  ) => EvaluatedResponse[]
 }
 
 export type ProberMetadata = {
@@ -90,10 +95,10 @@ export class BaseProber implements Prober {
     }
   }
 
-  validateResponse(
+  evaluateResponse(
     response: ProbeRequestResponse,
     additionalAssertions?: ProbeAlert[]
-  ): ValidatedResponse[] {
+  ): EvaluatedResponse[] {
     const assertions: ProbeAlert[] = [
       ...this.probeConfig.alerts,
       ...(additionalAssertions || []),
@@ -119,12 +124,12 @@ export class BaseProber implements Prober {
     const isSymonMode = isSymonModeFrom(flags)
     const eventEmitter = getEventEmitter()
     const isVerbose = isSymonMode || flags['keep-verbose-logs']
-    const validatedResponse = this.validateResponse(probeResult)
+    const evaluatedResponse = this.evaluateResponse(probeResult)
     const requestLog = new RequestLog(this.probeConfig, index, 0)
     const statuses = processThresholds({
       probe: this.probeConfig,
       requestIndex: index,
-      validatedResponse,
+      evaluatedResponse,
     })
 
     eventEmitter.emit(events.probe.response.received, {
@@ -134,7 +139,7 @@ export class BaseProber implements Prober {
     })
     isAlertTriggered ? log.warn(logMessage) : log.info(logMessage)
     requestLog.addAlerts(
-      validatedResponse
+      evaluatedResponse
         .filter((item) => item.isAlertTriggered)
         .map((item) => item.alert)
     )
@@ -146,7 +151,7 @@ export class BaseProber implements Prober {
         statuses,
         notifications: this.notifications,
         requestIndex: index,
-        validatedResponseStatuses: validatedResponse,
+        evaluatedResponseStatuses: evaluatedResponse,
       },
       requestLog
     )

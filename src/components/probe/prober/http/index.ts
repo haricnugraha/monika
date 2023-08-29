@@ -72,7 +72,7 @@ export class HTTPProber extends BaseProber {
           responses,
         })
         // Responses have been processed and validated
-        const validatedResponse = this.validateResponse(
+        const evaluatedResponse = this.evaluateResponse(
           probeRes,
           request.alerts
         )
@@ -80,7 +80,7 @@ export class HTTPProber extends BaseProber {
         const statuses = processThresholds({
           probe,
           requestIndex,
-          validatedResponse,
+          evaluatedResponse,
         })
 
         // Set request result value
@@ -100,7 +100,7 @@ export class HTTPProber extends BaseProber {
         responses.push(probeRes)
         requestLog.setResponse(probeRes)
         requestLog.addAlerts(
-          validatedResponse
+          evaluatedResponse
             .filter((item) => item.isAlertTriggered)
             .map((item) => item.alert)
         )
@@ -115,20 +115,20 @@ export class HTTPProber extends BaseProber {
             isProbeResponsive && // if connection is successful but
             isConnectionDown.has(id) // if connection WAS down then send a custom recovery alert. Else use user's alert.
           ) {
-            validatedResponse[0].alert = {
+            evaluatedResponse[0].alert = {
               assertion: '',
               message: CONNECTION_RECOVERY_MESSAGE,
             }
             isConnectionDown.delete(id) // connection is up, so remove from entry
-            validatedResponse.splice(1, validatedResponse.length) // truncate and use custom message
+            evaluatedResponse.splice(1, evaluatedResponse.length) // truncate and use custom message
           } else if (!isProbeResponsive) {
             // if connection has failed, then lets send out specific notification
-            validatedResponse[0].alert = {
+            evaluatedResponse[0].alert = {
               assertion: '',
               message: CONNECTION_INCIDENT_MESSAGE,
             }
             isConnectionDown.set(id, true) // connection is down, so add to map
-            validatedResponse.splice(1, validatedResponse.length) // truncate and use custom message
+            evaluatedResponse.splice(1, evaluatedResponse.length) // truncate and use custom message
           }
         }
 
@@ -139,14 +139,14 @@ export class HTTPProber extends BaseProber {
             statuses,
             notifications,
             requestIndex,
-            validatedResponseStatuses: validatedResponse,
+            evaluatedResponseStatuses: evaluatedResponse,
           },
           requestLog
         )
 
         // Exit the chaining loop if there is any alert triggered
-        if (validatedResponse.some((item) => item.isAlertTriggered)) {
-          const triggeredAlertResponse = validatedResponse.find(
+        if (evaluatedResponse.some((item) => item.isAlertTriggered)) {
+          const triggeredAlertResponse = evaluatedResponse.find(
             (item) => item.isAlertTriggered
           )
 

@@ -23,15 +23,15 @@
  **********************************************************************************/
 
 import { getContext, setContext } from '../../context'
-import { ValidatedResponse } from '../../plugins/validate-response'
 import getIp from '../../utils/ip'
+import type { EvaluatedResponse } from '../probe/prober'
 import { getMessageForAlert } from './alert-message'
 import { sendNotifications } from '@hyperjumptech/monika-notification'
 import type { Notification } from '@hyperjumptech/monika-notification'
 
 type SendAlertsProps = {
   probeID: string
-  validation: ValidatedResponse
+  validation: EvaluatedResponse
   notifications: Notification[]
   url: string
   probeState: string

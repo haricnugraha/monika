@@ -35,9 +35,8 @@ import { getOSName } from '../components/notification/alert-message'
 import { getContext } from '../context'
 import type { MonikaFlags } from '../context/monika-flags'
 import events from '../events'
-import { Config } from '../interfaces/config'
-import { Probe } from '../interfaces/probe'
-import { ValidatedResponse } from '../plugins/validate-response'
+import type { Config } from '../interfaces/config'
+import type { Probe } from '../interfaces/probe'
 import { getEventEmitter } from '../utils/events'
 import { DEFAULT_TIMEOUT } from '../utils/http'
 import getIp from '../utils/ip'
@@ -48,6 +47,7 @@ import {
   publicIpAddress,
   publicNetworkInfo,
 } from '../utils/public-ip'
+import type { EvaluatedResponse } from '../components/probe/prober'
 
 Bree.extend(require('@breejs/ts-worker'))
 
@@ -82,7 +82,7 @@ type NotificationEvent = {
   probeID: string
   url: string
   probeState: string
-  validation: ValidatedResponse
+  validation: EvaluatedResponse
 }
 
 type ConfigListener = (config: Config) => void

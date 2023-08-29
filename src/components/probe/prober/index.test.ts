@@ -27,7 +27,7 @@ import type { ProbeRequestResponse } from '../../../interfaces/request'
 import type { Probe } from '../../../interfaces/probe'
 import { createProber } from '../../../components/probe/prober/factory'
 
-describe('validateResponse', () => {
+describe('evaluateResponse', () => {
   const mockedAlerts = [
     {
       assertion: 'response.status < 200 or response.status > 299',
@@ -43,7 +43,7 @@ describe('validateResponse', () => {
       probeConfig: { alerts: mockedAlerts } as Probe,
     })
     const res = generateMockedResponse(300, 20, true)
-    const data = prober.validateResponse(res)
+    const data = prober.evaluateResponse(res)
 
     expect(data).to.eql([
       {
@@ -86,7 +86,7 @@ describe('validateResponse', () => {
       probeConfig: { alerts: mockedAlerts } as Probe,
     })
     const res = generateMockedResponse(200, 20, true)
-    const data = prober.validateResponse(res)
+    const data = prober.evaluateResponse(res)
 
     expect(data).to.eql([
       {
@@ -129,7 +129,7 @@ describe('validateResponse', () => {
       probeConfig: { alerts: mockedAlerts } as Probe,
     })
     const res = generateMockedResponse(300, 10, true)
-    const data = prober.validateResponse(res)
+    const data = prober.evaluateResponse(res)
 
     expect(data).to.eql([
       {
@@ -172,7 +172,7 @@ describe('validateResponse', () => {
       probeConfig: { alerts: mockedAlerts } as Probe,
     })
     const res = generateMockedResponse(200, 10, true)
-    const data = prober.validateResponse(res)
+    const data = prober.evaluateResponse(res)
 
     expect(data).to.eql([
       {
@@ -215,7 +215,7 @@ describe('validateResponse', () => {
       probeConfig: { alerts: mockedAlerts } as Probe,
     })
     const res = generateMockedResponse(200, 10, true)
-    const data = prober.validateResponse(res, [
+    const data = prober.evaluateResponse(res, [
       { assertion: 'response.time > 5', message: '' },
     ])
 

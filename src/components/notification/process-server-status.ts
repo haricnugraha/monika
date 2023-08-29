@@ -24,9 +24,9 @@
 
 import { assign, createMachine, interpret, Interpreter } from 'xstate'
 
-import { Probe } from '../../interfaces/probe'
-import { ServerAlertState } from '../../interfaces/probe-status'
-import { ValidatedResponse } from '../../plugins/validate-response'
+import type { Probe } from '../../interfaces/probe'
+import type { ServerAlertState } from '../../interfaces/probe-status'
+import type { EvaluatedResponse } from '../probe/prober'
 
 export type ServerAlertStateContext = {
   incidentThreshold: number
@@ -117,13 +117,13 @@ export const serverAlertStateMachine = createMachine<ServerAlertStateContext>(
 type ProcessThresholdsParams = {
   probe: Probe
   requestIndex: number
-  validatedResponse: ValidatedResponse[]
+  evaluatedResponse: EvaluatedResponse[]
 }
 
 export const processThresholds = ({
   probe,
   requestIndex,
-  validatedResponse,
+  evaluatedResponse,
 }: ProcessThresholdsParams): ServerAlertState[] => {
   const { requests, incidentThreshold, recoveryThreshold, socket, name } = probe
   const request = requests?.[requestIndex]
@@ -139,7 +139,7 @@ export const processThresholds = ({
   if (!serverAlertStateInterpreters.has(id!)) {
     const interpreters: Record<string, any> = {}
 
-    for (const alert of validatedResponse.map((r) => r.alert)) {
+    for (const alert of evaluatedResponse.map((r) => r.alert)) {
       const stateMachine = serverAlertStateMachine.withContext({
         incidentThreshold,
         recoveryThreshold,
@@ -156,7 +156,7 @@ export const processThresholds = ({
 
   // Send event for successes and failures to state interpreter
   // then get latest state for each alert
-  for (const validation of validatedResponse) {
+  for (const validation of evaluatedResponse) {
     const { alert, isAlertTriggered } = validation
     const interpreter = serverAlertStateInterpreters.get(id!)![alert.assertion]
 
