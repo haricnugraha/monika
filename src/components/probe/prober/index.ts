@@ -190,6 +190,15 @@ export class BaseProber implements Prober {
     return results
   }
 
+  private logResponseMessage(isAlertTriggered: boolean, message: string) {
+    if (!isAlertTriggered) {
+      log.info(message)
+      return
+    }
+
+    log.warn(message)
+  }
+
   private responseProcessing({
     index,
     probeResults,
@@ -199,10 +208,10 @@ export class BaseProber implements Prober {
       requestIndex: index,
       response: probeResults[index].requestResponse,
     })
-
-    probeResults[index].isAlertTriggered
-      ? log.warn(probeResults[index].logMessage)
-      : log.info(probeResults[index].logMessage)
+    this.logResponseMessage(
+      probeResults[index].isAlertTriggered,
+      probeResults[index].logMessage
+    )
 
     const requestLog = new RequestLog(this.probeConfig, index, 0)
     requestLog.addAlerts(
