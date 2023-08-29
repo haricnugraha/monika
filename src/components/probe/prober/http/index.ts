@@ -23,7 +23,6 @@
  **********************************************************************************/
 
 import { isSymonModeFrom } from '../../../config'
-import { checkThresholdsAndSendAlert } from '../..'
 import { getContext } from '../../../../context'
 import events from '../../../../events'
 import type { ProbeRequestResponse } from '../../../../interfaces/request'
@@ -131,7 +130,7 @@ export class HTTPProber extends BaseProber {
         }
 
         // Done processing results, check if need to send out alerts
-        checkThresholdsAndSendAlert(
+        this.checkThresholdsAndSendAlert(
           {
             probe,
             statuses,

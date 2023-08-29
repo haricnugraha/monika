@@ -24,7 +24,6 @@
 
 import type { Notification } from '@hyperjumptech/monika-notification'
 import { interpret } from 'xstate'
-import { checkThresholdsAndSendAlert } from '..'
 import { getContext } from '../../../context'
 import events from '../../../events'
 import type { Probe, ProbeAlert } from '../../../interfaces/probe'
@@ -39,6 +38,7 @@ import {
 } from '../../notification/process-server-status'
 import responseChecker from '../../../plugins/validate-response/checkers'
 import type { ServerAlertState } from '../../../interfaces/probe-status'
+import { sendAlerts } from '../../notification'
 
 export type ProbeResult = {
   isAlertTriggered: boolean
@@ -80,6 +80,19 @@ export type ProberMetadata = {
   notifications: Notification[]
   probeConfig: Probe
 }
+
+type ProbeStatusProcessed = {
+  probe: Probe
+  statuses?: ServerAlertState[]
+  notifications: Notification[]
+  evaluatedResponseStatuses: EvaluatedResponse[]
+  requestIndex: number
+}
+
+type ProbeSendNotification = {
+  index: number
+  probeState?: ServerAlertState
+} & Omit<ProbeStatusProcessed, 'statuses'>
 
 export class BaseProber implements Prober {
   protected readonly counter: number
@@ -199,6 +212,98 @@ export class BaseProber implements Prober {
     log.warn(message)
   }
 
+  protected checkThresholdsAndSendAlert(
+    data: ProbeStatusProcessed,
+    requestLog: RequestLog
+  ): void {
+    const {
+      probe,
+      statuses,
+      notifications,
+      requestIndex,
+      evaluatedResponseStatuses,
+    } = data
+
+    const probeStatesWithValidAlert = this.getProbeStatesWithValidAlert(
+      statuses || []
+    )
+
+    for (const [index, probeState] of probeStatesWithValidAlert.entries()) {
+      const { alertQuery, state } = probeState
+
+      // send only notifications that we have messages for (if it was truncated)
+      if (index === evaluatedResponseStatuses.length) {
+        break
+      }
+
+      this.probeSendNotification({
+        index,
+        probe,
+        probeState,
+        notifications,
+        requestIndex,
+        evaluatedResponseStatuses,
+      }).catch((error: Error) => log.error(error.message))
+
+      requestLog.addNotifications(
+        (notifications ?? []).map((notification) => ({
+          notification,
+          type: state === 'DOWN' ? 'NOTIFY-INCIDENT' : 'NOTIFY-RECOVER',
+          alertQuery: alertQuery || '',
+        }))
+      )
+    }
+  }
+
+  private getProbeStatesWithValidAlert(
+    probeStates: ServerAlertState[]
+  ): ServerAlertState[] {
+    return probeStates.filter(
+      ({ isFirstTime, shouldSendNotification, state }) => {
+        const isFirstUpEvent = isFirstTime && state === 'UP'
+        const isFirstUpEventForNonSymonMode = isFirstUpEvent
+
+        return shouldSendNotification && !isFirstUpEventForNonSymonMode
+      }
+    )
+  }
+
+  private async probeSendNotification(data: ProbeSendNotification) {
+    const {
+      index,
+      probe,
+      probeState,
+      notifications,
+      requestIndex,
+      evaluatedResponseStatuses,
+    } = data
+    const statusString = probeState?.state ?? 'UP'
+    const url = probe.requests?.[requestIndex]?.url ?? ''
+    const validation =
+      evaluatedResponseStatuses.find(
+        (evaluateResponse: EvaluatedResponse) =>
+          evaluateResponse.alert.assertion === probeState?.alertQuery
+      ) || evaluatedResponseStatuses[index]
+
+    getEventEmitter().emit(events.probe.notification.willSend, {
+      probeID: probe.id,
+      notifications: notifications ?? [],
+      url: url,
+      probeState: statusString,
+      validation,
+    })
+
+    if ((notifications?.length ?? 0) > 0) {
+      await sendAlerts({
+        probeID: probe.id,
+        url,
+        probeState: statusString,
+        notifications: notifications ?? [],
+        validation,
+      })
+    }
+  }
+
   private responseProcessing({
     index,
     probeResults,
@@ -213,6 +318,9 @@ export class BaseProber implements Prober {
       probeResults[index].logMessage
     )
 
+    // log triggered alerts
+    // send notification
+    // store request and notification data to database
     const requestLog = new RequestLog(this.probeConfig, index, 0)
     requestLog.addAlerts(
       this.evaluateResponse(probeResults[index].requestResponse)
@@ -221,7 +329,7 @@ export class BaseProber implements Prober {
     )
     requestLog.setResponse(probeResults[index].requestResponse)
     // Done processing results, check if need to send out alerts
-    checkThresholdsAndSendAlert(
+    this.checkThresholdsAndSendAlert(
       {
         probe: this.probeConfig,
         statuses: this.processThresholds({

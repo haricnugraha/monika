@@ -24,129 +24,15 @@
 
 import { differenceInSeconds } from 'date-fns'
 import { getContext } from '../../context'
-import events from '../../events'
 import type { Notification } from '@hyperjumptech/monika-notification'
 import type { Probe } from '../../interfaces/probe'
-import type { ServerAlertState } from '../../interfaces/probe-status'
-import { getEventEmitter } from '../../utils/events'
-import { log } from '../../utils/pino'
 import {
   getProbeContext,
   getProbeState,
   setProbeFinish,
   setProbeRunning,
 } from '../../utils/probe-state'
-import { RequestLog } from '../logger'
-import { sendAlerts } from '../notification'
 import { createProbers } from './prober/factory'
-import type { EvaluatedResponse } from './prober'
-
-interface ProbeStatusProcessed {
-  probe: Probe
-  statuses?: ServerAlertState[]
-  notifications: Notification[]
-  evaluatedResponseStatuses: EvaluatedResponse[]
-  requestIndex: number
-}
-
-interface ProbeSendNotification extends Omit<ProbeStatusProcessed, 'statuses'> {
-  index: number
-  probeState?: ServerAlertState
-}
-
-const probeSendNotification = async (data: ProbeSendNotification) => {
-  const eventEmitter = getEventEmitter()
-
-  const {
-    index,
-    probe,
-    probeState,
-    notifications,
-    requestIndex,
-    evaluatedResponseStatuses,
-  } = data
-
-  const statusString = probeState?.state ?? 'UP'
-  const url = probe.requests?.[requestIndex]?.url ?? ''
-  const validation =
-    evaluatedResponseStatuses.find(
-      (evaluateResponse: EvaluatedResponse) =>
-        evaluateResponse.alert.assertion === probeState?.alertQuery
-    ) || evaluatedResponseStatuses[index]
-
-  eventEmitter.emit(events.probe.notification.willSend, {
-    probeID: probe.id,
-    notifications: notifications ?? [],
-    url: url,
-    probeState: statusString,
-    validation,
-  })
-
-  if ((notifications?.length ?? 0) > 0) {
-    await sendAlerts({
-      probeID: probe.id,
-      url,
-      probeState: statusString,
-      notifications: notifications ?? [],
-      validation,
-    })
-  }
-}
-
-// Probes Thresholds processed, Send out notifications/alerts.
-export function checkThresholdsAndSendAlert(
-  data: ProbeStatusProcessed,
-  requestLog: RequestLog
-): void {
-  const {
-    probe,
-    statuses,
-    notifications,
-    requestIndex,
-    evaluatedResponseStatuses,
-  } = data
-
-  const probeStatesWithValidAlert = getProbeStatesWithValidAlert(statuses || [])
-
-  for (const [index, probeState] of probeStatesWithValidAlert.entries()) {
-    const { alertQuery, state } = probeState
-
-    // send only notifications that we have messages for (if it was truncated)
-    if (index === evaluatedResponseStatuses.length) {
-      break
-    }
-
-    probeSendNotification({
-      index,
-      probe,
-      probeState,
-      notifications,
-      requestIndex,
-      evaluatedResponseStatuses,
-    }).catch((error: Error) => log.error(error.message))
-
-    requestLog.addNotifications(
-      (notifications ?? []).map((notification) => ({
-        notification,
-        type: state === 'DOWN' ? 'NOTIFY-INCIDENT' : 'NOTIFY-RECOVER',
-        alertQuery: alertQuery || '',
-      }))
-    )
-  }
-}
-
-export function getProbeStatesWithValidAlert(
-  probeStates: ServerAlertState[]
-): ServerAlertState[] {
-  return probeStates.filter(
-    ({ isFirstTime, shouldSendNotification, state }) => {
-      const isFirstUpEvent = isFirstTime && state === 'UP'
-      const isFirstUpEventForNonSymonMode = isFirstUpEvent
-
-      return shouldSendNotification && !isFirstUpEventForNonSymonMode
-    }
-  )
-}
 
 type doProbeParams = {
   probe: Probe // probe contains all the probes
