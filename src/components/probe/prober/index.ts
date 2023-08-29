@@ -26,14 +26,15 @@ import type { Notification } from '@hyperjumptech/monika-notification'
 import { checkThresholdsAndSendAlert } from '..'
 import { getContext } from '../../../context'
 import events from '../../../events'
-import type { Probe } from '../../../interfaces/probe'
+import type { Probe, ProbeAlert } from '../../../interfaces/probe'
 import type { ProbeRequestResponse } from '../../../interfaces/request'
-import validateResponse from '../../../plugins/validate-response'
 import { getEventEmitter } from '../../../utils/events'
 import { log } from '../../../utils/pino'
 import { isSymonModeFrom } from '../../config'
 import { RequestLog } from '../../logger'
 import { processThresholds } from '../../notification/process-server-status'
+import responseChecker from '../../../plugins/validate-response/checkers'
+import type { ValidatedResponse } from '../../../plugins/validate-response'
 
 export type ProbeResult = {
   isAlertTriggered: boolean
@@ -49,6 +50,10 @@ type RespProsessingParams = {
 export interface Prober {
   probe: () => Promise<void>
   generateVerboseStartupMessage: () => string
+  validateResponse: (
+    response: ProbeRequestResponse,
+    additionalAssertions?: ProbeAlert[]
+  ) => ValidatedResponse[]
 }
 
 export type ProberMetadata = {
@@ -85,6 +90,22 @@ export class BaseProber implements Prober {
     }
   }
 
+  validateResponse(
+    response: ProbeRequestResponse,
+    additionalAssertions?: ProbeAlert[]
+  ): ValidatedResponse[] {
+    const assertions: ProbeAlert[] = [
+      ...this.probeConfig.alerts,
+      ...(additionalAssertions || []),
+    ]
+
+    return assertions.map((assertion) => ({
+      alert: assertion,
+      isAlertTriggered: responseChecker(assertion, response),
+      response,
+    }))
+  }
+
   private responseProcessing({
     index,
     probeResults,
@@ -98,16 +119,7 @@ export class BaseProber implements Prober {
     const isSymonMode = isSymonModeFrom(flags)
     const eventEmitter = getEventEmitter()
     const isVerbose = isSymonMode || flags['keep-verbose-logs']
-    const { alerts } = this.probeConfig
-    const validatedResponse = validateResponse(
-      alerts || [
-        {
-          assertion: 'response.status < 200 or response.status > 299',
-          message: 'probe cannot be accessed',
-        },
-      ],
-      probeResult
-    )
+    const validatedResponse = this.validateResponse(probeResult)
     const requestLog = new RequestLog(this.probeConfig, index, 0)
     const statuses = processThresholds({
       probe: this.probeConfig,
