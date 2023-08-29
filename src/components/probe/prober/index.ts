@@ -194,47 +194,47 @@ export class BaseProber implements Prober {
     index,
     probeResults,
   }: RespProsessingParams): void {
-    const {
-      isAlertTriggered,
-      logMessage,
-      requestResponse: probeResult,
-    } = probeResults[index]
-    const { flags } = getContext()
-    const isSymonMode = isSymonModeFrom(flags)
-    const eventEmitter = getEventEmitter()
-    const isVerbose = isSymonMode || flags['keep-verbose-logs']
-    const evaluatedResponse = this.evaluateResponse(probeResult)
-    const requestLog = new RequestLog(this.probeConfig, index, 0)
-    const statuses = this.processThresholds({
-      requestIndex: index,
-      evaluatedResponse,
-    })
-
-    eventEmitter.emit(events.probe.response.received, {
+    getEventEmitter().emit(events.probe.response.received, {
       probe: this.probeConfig,
       requestIndex: index,
-      response: probeResult,
+      response: probeResults[index].requestResponse,
     })
-    isAlertTriggered ? log.warn(logMessage) : log.info(logMessage)
+
+    probeResults[index].isAlertTriggered
+      ? log.warn(probeResults[index].logMessage)
+      : log.info(probeResults[index].logMessage)
+
+    const requestLog = new RequestLog(this.probeConfig, index, 0)
     requestLog.addAlerts(
-      evaluatedResponse
+      this.evaluateResponse(probeResults[index].requestResponse)
         .filter((item) => item.isAlertTriggered)
         .map((item) => item.alert)
     )
-    requestLog.setResponse(probeResult)
+    requestLog.setResponse(probeResults[index].requestResponse)
     // Done processing results, check if need to send out alerts
     checkThresholdsAndSendAlert(
       {
         probe: this.probeConfig,
-        statuses,
+        statuses: this.processThresholds({
+          requestIndex: index,
+          evaluatedResponse: this.evaluateResponse(
+            probeResults[index].requestResponse
+          ),
+        }),
         notifications: this.notifications,
         requestIndex: index,
-        evaluatedResponseStatuses: evaluatedResponse,
+        evaluatedResponseStatuses: this.evaluateResponse(
+          probeResults[index].requestResponse
+        ),
       },
       requestLog
     )
 
-    if (isVerbose || requestLog.hasIncidentOrRecovery) {
+    if (
+      isSymonModeFrom(getContext().flags) ||
+      getContext().flags['keep-verbose-logs'] ||
+      requestLog.hasIncidentOrRecovery
+    ) {
       requestLog.saveToDatabase().catch((error) => log.error(error.message))
     }
   }
