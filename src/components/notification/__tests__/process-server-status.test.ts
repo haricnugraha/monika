@@ -28,11 +28,11 @@ import { interpret } from 'xstate'
 import type { Probe } from '../../../interfaces/probe'
 import type { ServerAlertState } from '../../../interfaces/probe-status'
 import {
-  processThresholds,
   serverAlertStateInterpreters,
   serverAlertStateMachine,
 } from '../process-server-status'
 import type { EvaluatedResponse } from '../../probe/prober'
+import { createProber } from '../../probe/prober/factory'
 
 describe('serverAlertStateMachine', () => {
   let interpreter: any
@@ -159,16 +159,20 @@ describe('processThresholds', () => {
   ] as EvaluatedResponse[]
 
   it('should attach state calculation to each request', () => {
+    // arrange
+    const prober = createProber({
+      counter: 0,
+      notifications: [],
+      probeConfig: probe,
+    })
     // failure happened first for request with index 0
-    processThresholds({
-      probe,
+    prober.processThresholds({
       requestIndex: 0,
       evaluatedResponse: failureResponse,
     })
 
     // processing request with index 1
-    const result1 = processThresholds({
-      probe,
+    const result1 = prober.processThresholds({
       requestIndex: 1,
       evaluatedResponse: failureResponse,
     })
@@ -176,8 +180,7 @@ describe('processThresholds', () => {
     // failure happened only once for request with index 1, it does not reach threshold yet
     expect(result1[0].state).to.equals('UP')
 
-    const result2 = processThresholds({
-      probe,
+    const result2 = prober.processThresholds({
       requestIndex: 1,
       evaluatedResponse: failureResponse,
     })
@@ -187,12 +190,17 @@ describe('processThresholds', () => {
   })
 
   it('should compute shouldSendNotification based on threshold and previous state', () => {
+    // arrange
+    const prober = createProber({
+      counter: 0,
+      notifications: [],
+      probeConfig: probe,
+    })
     let result!: ServerAlertState[]
 
     // trigger down state
     for (let i = 0; i < probe.incidentThreshold; i++) {
-      result = processThresholds({
-        probe,
+      result = prober.processThresholds({
         requestIndex: 1,
         evaluatedResponse: failureResponse,
       })
@@ -204,16 +212,14 @@ describe('processThresholds', () => {
     expect(result[0].shouldSendNotification).to.equals(true)
 
     // send success response once
-    result = processThresholds({
-      probe,
+    result = prober.processThresholds({
       requestIndex: 1,
       evaluatedResponse: successResponse,
     })
 
     // send failure response again as much threshold
     for (let i = 0; i < probe.incidentThreshold; i++) {
-      result = processThresholds({
-        probe,
+      result = prober.processThresholds({
         requestIndex: 1,
         evaluatedResponse: failureResponse,
       })
@@ -226,8 +232,7 @@ describe('processThresholds', () => {
 
     // send success response as much threshold
     for (let i = 0; i < probe.recoveryThreshold; i++) {
-      result = processThresholds({
-        probe,
+      result = prober.processThresholds({
         requestIndex: 1,
         evaluatedResponse: successResponse,
       })
@@ -239,16 +244,14 @@ describe('processThresholds', () => {
     expect(result[0].shouldSendNotification).to.equals(true)
 
     // send failure response once
-    result = processThresholds({
-      probe,
+    result = prober.processThresholds({
       requestIndex: 1,
       evaluatedResponse: failureResponse,
     })
 
     // send success response as much threshold
     for (let i = 0; i < probe.recoveryThreshold; i++) {
-      result = processThresholds({
-        probe,
+      result = prober.processThresholds({
         requestIndex: 1,
         evaluatedResponse: successResponse,
       })
@@ -269,10 +272,14 @@ describe('processThresholds', () => {
         port: '5432',
       },
     } as unknown as Probe
+    const prober = createProber({
+      counter: 0,
+      notifications: [],
+      probeConfig: probe,
+    })
 
     // act
-    const result = processThresholds({
-      probe,
+    const result = prober.processThresholds({
       requestIndex: 1,
       evaluatedResponse: failureResponse,
     })

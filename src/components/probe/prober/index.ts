@@ -23,6 +23,7 @@
  **********************************************************************************/
 
 import type { Notification } from '@hyperjumptech/monika-notification'
+import { interpret } from 'xstate'
 import { checkThresholdsAndSendAlert } from '..'
 import { getContext } from '../../../context'
 import events from '../../../events'
@@ -32,8 +33,12 @@ import { getEventEmitter } from '../../../utils/events'
 import { log } from '../../../utils/pino'
 import { isSymonModeFrom } from '../../config'
 import { RequestLog } from '../../logger'
-import { processThresholds } from '../../notification/process-server-status'
+import {
+  serverAlertStateInterpreters,
+  serverAlertStateMachine,
+} from '../../notification/process-server-status'
 import responseChecker from '../../../plugins/validate-response/checkers'
+import type { ServerAlertState } from '../../../interfaces/probe-status'
 
 export type ProbeResult = {
   isAlertTriggered: boolean
@@ -52,6 +57,11 @@ export type EvaluatedResponse = {
   isAlertTriggered: boolean
 }
 
+type ProcessThresholdsParams = {
+  requestIndex: number
+  evaluatedResponse: EvaluatedResponse[]
+}
+
 export interface Prober {
   probe: () => Promise<void>
   generateVerboseStartupMessage: () => string
@@ -59,6 +69,10 @@ export interface Prober {
     response: ProbeRequestResponse,
     additionalAssertions?: ProbeAlert[]
   ) => EvaluatedResponse[]
+  processThresholds: ({
+    requestIndex,
+    evaluatedResponse,
+  }: ProcessThresholdsParams) => ServerAlertState[]
 }
 
 export type ProberMetadata = {
@@ -111,6 +125,71 @@ export class BaseProber implements Prober {
     }))
   }
 
+  processThresholds({
+    requestIndex,
+    evaluatedResponse,
+  }: ProcessThresholdsParams): ServerAlertState[] {
+    const { requests, incidentThreshold, recoveryThreshold, socket, name } =
+      this.probeConfig
+    const request = requests?.[requestIndex]
+
+    const id = `${this.probeConfig?.id}:${name}:${requestIndex}:${
+      request?.id || ''
+    }-${incidentThreshold}:${recoveryThreshold} ${
+      request?.url || (socket ? `${socket.host}:${socket.port}` : '')
+    }`
+
+    const results: Array<ServerAlertState> = []
+
+    if (!serverAlertStateInterpreters.has(id!)) {
+      const interpreters: Record<string, any> = {}
+
+      for (const alert of evaluatedResponse.map((r) => r.alert)) {
+        const stateMachine = serverAlertStateMachine.withContext({
+          incidentThreshold,
+          recoveryThreshold,
+          consecutiveFailures: 0,
+          consecutiveSuccesses: 0,
+          isFirstTimeSendEvent: true,
+        })
+
+        interpreters[alert.assertion] = interpret(stateMachine).start()
+      }
+
+      serverAlertStateInterpreters.set(id!, interpreters)
+    }
+
+    // Send event for successes and failures to state interpreter
+    // then get latest state for each alert
+    for (const validation of evaluatedResponse) {
+      const { alert, isAlertTriggered } = validation
+      const interpreter = serverAlertStateInterpreters.get(id!)![
+        alert.assertion
+      ]
+
+      const prevStateValue = interpreter.state.value
+
+      interpreter.send(isAlertTriggered ? 'FAILURE' : 'SUCCESS')
+
+      const stateValue = interpreter.state.value
+      const stateContext = interpreter.state.context
+
+      results.push({
+        isFirstTime: stateContext.isFirstTimeSendEvent,
+        alertQuery: alert.assertion,
+        state: stateValue as 'UP' | 'DOWN',
+        shouldSendNotification:
+          stateContext.isFirstTimeSendEvent ||
+          (stateValue === 'DOWN' && prevStateValue === 'UP') ||
+          (stateValue === 'UP' && prevStateValue === 'DOWN'),
+      })
+
+      interpreter.send('FIST_TIME_EVENT_SENT')
+    }
+
+    return results
+  }
+
   private responseProcessing({
     index,
     probeResults,
@@ -126,8 +205,7 @@ export class BaseProber implements Prober {
     const isVerbose = isSymonMode || flags['keep-verbose-logs']
     const evaluatedResponse = this.evaluateResponse(probeResult)
     const requestLog = new RequestLog(this.probeConfig, index, 0)
-    const statuses = processThresholds({
-      probe: this.probeConfig,
+    const statuses = this.processThresholds({
       requestIndex: index,
       evaluatedResponse,
     })
